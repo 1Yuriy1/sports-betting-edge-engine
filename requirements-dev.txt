@@ -1,0 +1,4 @@
+pandas>=2,<3
+numpy>=2,<3
+pytest>=8
+ruff>=0.6
