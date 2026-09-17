@@ -1,0 +1,76 @@
+name: Odds snapshot
+
+# Credit-aware cadence: the cron runs twice daily, and snapshot_odds.py skips
+# the API call when the newest snapshot is younger than SNAPSHOT_INTERVAL_HOURS
+# (default 12h ~ 60 credits/mo on The Odds API free tier). Override the repo
+# variable (or tighten the cron) without editing this file.
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: odds-snapshot
+
+jobs:
+  snapshot:
+    name: Append odds snapshot to data branch
+    runs-on: ubuntu-latest
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check out data branch (snapshot storage)
+        uses: actions/checkout@v4
+        with:
+          ref: data
+          path: data-branch
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Create virtualenv and install dev dependencies
+        run: |
+          uv venv
+          uv pip install -r requirements-dev.txt
+
+      - name: Notice (ODDS_API_KEY not set)
+        if: env.ODDS_API_KEY == ''
+        run: echo "::notice::ODDS_API_KEY secret is not set; snapshot skipped"
+
+      - name: Fetch odds and append snapshot
+        if: env.ODDS_API_KEY != ''
+        env:
+          SNAPSHOT_INTERVAL_HOURS: ${{ vars.SNAPSHOT_INTERVAL_HOURS || '12' }}
+        run: |
+          source .venv/bin/activate
+          python scripts/snapshot_odds.py \
+            --sport americanfootball_nfl \
+            --regions us \
+            --books pinnacle,fanduel,draftkings,betmgm,caesars \
+            --db data-branch/odds.sqlite
+
+      - name: Commit snapshot to data branch
+        if: env.ODDS_API_KEY != ''
+        working-directory: data-branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # odds.sqlite is gitignored on main (*.sqlite); the data branch exists
+          # to track it, so the add is intentionally forced.
+          git add -f odds.sqlite
+          if git diff --cached --quiet; then
+            echo "No new snapshot rows; nothing to commit"
+          else
+            git commit -m "snapshot: americanfootball_nfl $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            git push
+          fi
