@@ -12,7 +12,13 @@ from __future__ import annotations
 import hermes_conspiracy_model as hcm
 import pytest
 
-from engine.anchor import AnchorUnavailable, line_move, sharp_anchor
+from engine.anchor import (
+    STEAM_MOVE_CENTS,
+    AnchorUnavailable,
+    cents_between,
+    line_move,
+    sharp_anchor,
+)
 from engine.odds import OddsRow
 from engine.pricing import moneyline_to_implied, no_vig_pair
 from engine.store import OddsStore
@@ -208,6 +214,84 @@ class TestLineMove:
 
     def test_unknown_game_returns_empty(self, moved):
         assert line_move(moved, "no-such-game") == {}
+
+
+class TestSteamFlags:
+    """Seam-aware movement and steam thresholds on the open→now move."""
+
+    def test_ordinary_move_cents_and_no_steam(self, store):
+        store.insert_rows(
+            [
+                _row(GAME, T1, "pinnacle", DET, -115),
+                _row(GAME, T1, "pinnacle", BUF, -105),
+                _row(GAME, T2, "pinnacle", DET, -118),
+                _row(GAME, T2, "pinnacle", BUF, -102),
+            ]
+        )
+        move = line_move(store, GAME, book="pinnacle")
+        assert move[DET]["move_cents"] == pytest.approx(-3.0)
+        assert move[DET]["steam"] is False
+        assert move[BUF]["move_cents"] == pytest.approx(3.0)
+
+    def test_one_tick_across_even_money_is_ten_cents_not_210(self, store):
+        store.insert_rows(
+            [
+                _row(GAME, T1, "pinnacle", DET, -110),
+                _row(GAME, T1, "pinnacle", BUF, -110),
+                _row(GAME, T2, "pinnacle", DET, 100),
+                _row(GAME, T2, "pinnacle", BUF, -120),
+            ]
+        )
+        move = line_move(store, GAME, book="pinnacle")
+        assert move[DET]["move_cents"] == pytest.approx(10.0)
+        assert move[DET]["delta"] == pytest.approx(210.0)  # raw points mislead
+        assert move[DET]["steam"] is True
+
+    def test_fifteen_cent_move_is_steam(self, store):
+        store.insert_rows(
+            [
+                _row(GAME, T1, "pinnacle", DET, -115),
+                _row(GAME, T1, "pinnacle", BUF, -105),
+                _row(GAME, T2, "pinnacle", DET, -130),
+                _row(GAME, T2, "pinnacle", BUF, 110),
+            ]
+        )
+        move = line_move(store, GAME, book="pinnacle")
+        assert move[DET]["move_cents"] == pytest.approx(-15.0)
+        assert move[DET]["steam"] is True
+
+    def test_threshold_is_at_least_ten_cents(self):
+        assert STEAM_MOVE_CENTS == 10.0
+
+    def test_missing_endpoint_is_not_steam(self, store):
+        store.insert_rows(
+            [
+                _row(GAME, T1, "pinnacle", DET, -110),
+                _row(GAME, T2, "fanduel", DET, -130),  # fanduel only
+            ]
+        )
+        move = line_move(store, GAME, book="pinnacle")
+        assert move[DET]["now"] is None
+        assert move[DET]["move_cents"] is None
+        assert move[DET]["steam"] is False
+
+    def test_zero_movement_is_not_steam(self, store):
+        store.insert_rows(
+            [
+                _row(GAME, T1, "pinnacle", DET, -110),
+                _row(GAME, T1, "pinnacle", BUF, -110),
+                _row(GAME, T2, "pinnacle", DET, -110),
+                _row(GAME, T2, "pinnacle", BUF, -110),
+            ]
+        )
+        move = line_move(store, GAME, book="pinnacle")
+        assert move[DET]["move_cents"] == pytest.approx(0.0)
+        assert move[DET]["steam"] is False
+
+    def test_cents_between_is_seam_aware(self):
+        assert cents_between(-110.0, 100.0) == pytest.approx(10.0)
+        assert cents_between(100.0, -110.0) == pytest.approx(-10.0)
+        assert cents_between(-115.0, -118.0) == pytest.approx(-3.0)
 
 
 class TestStoreSnapshotsReader:

@@ -91,6 +91,68 @@ Look for:
 }
 ```
 
+## Engine core: snapshots, sharp anchor, and staking
+
+The `engine/` package is the deterministic core — every number the
+product relies on is computed there, everything runs offline from the
+SQLite snapshot store, and the conspiracy model is never an input to
+staking.
+
+### Odds snapshots (The Odds API)
+
+`engine/odds.py` wraps The Odds API (the provider locked in the spec):
+h2h moneylines, retry/backoff on 429/5xx, and credit accounting from the
+response headers — the free tier is roughly 500 credits/month, so every
+read of remaining credits matters. The snapshot CLI fetches and appends
+one snapshot; the cadence belongs to your scheduler (see
+`.github/workflows/snapshot.yml`), not the tool:
+
+```bash
+uv run python scripts/snapshot_odds.py --sport americanfootball_nfl
+```
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `ODDS_API_KEY` | — | The Odds API key (required; never hardcoded, never in tests) |
+| `ODDS_DB_PATH` | `./odds.sqlite` | SQLite file for odds snapshots and bets |
+| `SNAPSHOT_INTERVAL_HOURS` | `12` | Minimum cadence the scheduler should allow on the free tier |
+
+Snapshots are append-only and idempotent: running the same fetch twice
+appends zero duplicate rows. `--help` shows per-sport and per-book
+filtering.
+
+### Sharp anchor, edges, and fractional Kelly
+
+`engine/anchor.py` anchors every price on the sharp books (Pinnacle and
+Circa by default): the no-vig pair is devigged per book and averaged
+across sharp books quoting both sides. If no sharp book quotes both
+sides, the anchor is unavailable — soft books are never substituted.
+Edges are `sharp_prob − implied(best soft price)`, ranked, and sized by
+`engine/kelly.py` (quarter Kelly by default, capped at 5% of bankroll,
+0 whenever the edge is non-positive — a pass). Line movement reports
+open→now movement in seam-aware cents (a one-tick move across ±100 is
+10 cents, not 210) with a `steam` flag at 10 cents:
+
+```python
+from engine.anchor import find_edges, line_move, sharp_anchor
+from engine.kelly import kelly_stake
+from engine.odds import OddsClient
+from engine.store import OddsStore
+
+store = OddsStore("./odds.sqlite")
+client = OddsClient()  # reads ODDS_API_KEY; inject a transport in tests
+anchor = sharp_anchor(store, "det-buf-2026-09-21")
+rows = find_edges(store, client, min_edge=0.02, bankroll=1000.0)
+moves = line_move(store, "det-buf-2026-09-21")
+```
+
+The conspiracy model's output rides along only as the clearly labelled
+`narrative` field on each edge row — display, never a staking input.
+
+> **Live-key gate:** a real `ODDS_API_KEY` fetch plus a credit-header
+> check is a manual verification step before upgrading from the free
+> tier. CI and the test suite never touch the live API.
+
 ## Bet log, grading, and CLV
 
 Bets live in the same SQLite file as the odds snapshots (`bets` table, schema

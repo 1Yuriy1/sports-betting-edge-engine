@@ -22,6 +22,7 @@ from .pricing import moneyline_to_implied, no_vig_pair
 from .store import OddsStore
 
 DEFAULT_SHARP_BOOKS = ("pinnacle", "circa")
+STEAM_MOVE_CENTS = 10.0  # a 10-cent open→now move is steam
 
 
 class AnchorUnavailable(RuntimeError):
@@ -60,7 +61,9 @@ class LineMove(TypedDict):
 
     open: float | None
     now: float | None
-    delta: float | None
+    delta: float | None  # raw American price points; the seam inflates it
+    move_cents: float | None  # seam-aware movement in cents
+    steam: bool  # |move_cents| >= STEAM_MOVE_CENTS
 
 
 def _require_h2h(market: str) -> None:
@@ -70,6 +73,21 @@ def _require_h2h(market: str) -> None:
             f"unsupported market {market!r}: the store persists"
             f" {H2H_MARKET!r} rows only"
         )
+
+
+def _line_scalar(odds: float) -> float:
+    """Map an American price onto a line where even money is 0.
+
+    Positive prices map to odds - 100, negative to odds + 100, so a
+    one-tick move costs the same cents on both sides of the -100/+100
+    seam: -110 → +100 is 10 cents, not the raw 210-point difference.
+    """
+    return odds - 100.0 if odds > 0.0 else odds + 100.0
+
+
+def cents_between(from_odds: float, to_odds: float) -> float:
+    """Seam-aware line movement in cents (positive = drifted away from even)."""
+    return _line_scalar(to_odds) - _line_scalar(from_odds)
 
 
 def _latest_per_game(
@@ -244,11 +262,15 @@ def line_move(
     """Open→now price movement per side, from stored snapshots.
 
     ``open`` is the price at the game's earliest snapshot, ``now`` at the
-    latest; ``delta`` is ``now - open`` in American price points. With
-    ``book=None`` prices are averaged across bookmakers at each endpoint
-    (a late-joining book pulls the average); pass a bookmaker key to
-    track one book. Sides missing an endpoint report None — movement is
-    never guessed from a single observation. Unknown games return {}.
+    latest; ``delta`` is ``now - open`` in raw American points and
+    ``move_cents`` is the seam-aware movement in cents (a one-tick move
+    across even money is 10 cents, not 210). ``steam`` flags a move of
+    at least ``STEAM_MOVE_CENTS`` — the open→now signal that a sharp
+    book moved aggressively. With ``book=None`` prices are averaged
+    across bookmakers at each endpoint (a late-joining book pulls the
+    average); pass a bookmaker key to track one book. Sides missing an
+    endpoint report None — movement is never guessed from a single
+    observation. Unknown games return {}.
     """
     _require_h2h(market)
     rows = store.snapshots(game_id=game_id)
@@ -277,5 +299,16 @@ def line_move(
             if open_price is not None and now_price is not None
             else None
         )
-        movement[name] = {"open": open_price, "now": now_price, "delta": delta}
+        move_cents = (
+            cents_between(open_price, now_price)
+            if open_price is not None and now_price is not None
+            else None
+        )
+        movement[name] = {
+            "open": open_price,
+            "now": now_price,
+            "delta": delta,
+            "move_cents": move_cents,
+            "steam": move_cents is not None and abs(move_cents) >= STEAM_MOVE_CENTS,
+        }
     return movement
