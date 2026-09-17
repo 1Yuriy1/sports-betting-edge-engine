@@ -12,9 +12,12 @@ This folder contains the standalone **Hermes Conspiracy Model V2** code we built
 engine/odds.py                             # The Odds API client (h2h, retries, credit tracking)
 engine/store.py                            # Append-only SQLite snapshot store (schema v1)
 engine/ledger.py                           # Bet ledger: log, grade, CLV report
+engine/agent.py                            # Hermes agent: tool runner over the engine
 scripts/hermes_conspiracy_model.py         # Main model + CLI
 scripts/snapshot_odds.py                   # Odds snapshot CLI (data spine)
 scripts/bet_log.py                         # Bet-log CLI (log/grade/report)
+scripts/agent_slate.py                     # One agent turn -> structured slate report
+scripts/agent_chat.py                      # Interactive one-spot reasoning with the agent
 .github/workflows/ci.yml                   # Lint + test pipeline
 .github/workflows/snapshot.yml             # Scheduled odds snapshots
 references/v2-market-edge-filter.md        # V2 market-edge workflow
@@ -183,6 +186,48 @@ you bet. CLV is the honest early signal: it shows an edge in tens of bets,
 long before profit proves anything. Pending bets are excluded from the mean
 and reported by count (`bets_ungraded`), and graded bets without logged
 closing odds are counted as `bets_missing_closing_odds`.
+
+## Agent: Hermes over the engine
+
+`engine/agent.py` is the conversational layer: an Anthropic tool runner
+whose eleven tools (`get_slate`, `get_odds`, `fair_price`, `sharp_anchor`,
+`find_edges`, `line_move`, `conspiracy_score`, `narrate`, `log_bet`,
+`grade_bets`, `clv_report`) are thin wrappers over the deterministic engine
+functions above. The model never computes a number — every figure it cites
+comes from a tool result, and the conspiracy layer stays narration-only,
+never an input to stakes.
+
+Two entry points:
+
+```bash
+# One turn over the current slate -> structured report (medium effort)
+uv run python scripts/agent_slate.py --db ./odds.sqlite
+
+# Interactive reasoning about one spot (high effort)
+uv run python scripts/agent_chat.py --db ./odds.sqlite
+```
+
+### Setup
+
+The agent needs an Anthropic API key from the environment — it is never
+hardcoded and never used in tests:
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (required; export it before running) |
+| `AGENT_MODEL` | `claude-opus-5` | Model id used by the tool runner |
+| `ODDS_DB_PATH` | `./odds.sqlite` | Same SQLite file as the data spine |
+| `HERMES_TEAMS_CSV` | `examples/sample_teams.csv` | Team ratings for the narrative layer |
+
+The system prompt carries the Hermes voice plus hard guardrails: 21+ only,
+entertainment framing, no guarantees, and the mandatory disclaimer is
+re-applied to every output (structured or chat) even if the model omits
+it. Slate reports at `medium` effort; one-spot reasoning runs at `high`.
+
+> **Live-key gate:** like the odds client, a real `ANTHROPIC_API_KEY` call
+> is a manual verification step. CI and the test suite stay key-free — the
+> agent tests stub the SDK surface and execute the real tool objects
+> offline against a seeded temp store.
 
 ## Core idea
 
