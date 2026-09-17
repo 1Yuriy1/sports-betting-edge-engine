@@ -1,4 +1,4 @@
-"""Deterministic engine package: odds data spine, pricing, and (later) ledger.
+"""Deterministic engine package: odds data spine, pricing, anchoring, and ledger.
 
 Per the approved Betting Agent spec, everything that computes a number lives
 here; agents and scripts only call these functions. The conspiracy model in
