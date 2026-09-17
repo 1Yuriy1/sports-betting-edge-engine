@@ -116,6 +116,26 @@ class OddsStore:
         row = self._conn.execute("SELECT MAX(fetched_at) FROM odds_snapshots").fetchone()
         return row[0] if row else None
 
+    def snapshots(self, game_id: str | None = None) -> list[OddsRow]:
+        """Stored rows, oldest fetch first; optionally one game's rows.
+
+        The read side of the append-only store: anchor, edges, and line
+        movement consume this instead of touching the raw connection.
+        Ordering by (fetched_at, bookmaker, outcome_name) makes the
+        first/last fetch per game well-defined for open/now comparisons.
+        """
+        sql = (
+            "SELECT fetched_at, sport_key, game_id, commence_time,"
+            " bookmaker, outcome_name, price, book_updated_at"
+            " FROM odds_snapshots"
+        )
+        params: tuple[str, ...] = ()
+        if game_id is not None:
+            sql += " WHERE game_id = ?"
+            params = (game_id,)
+        sql += " ORDER BY fetched_at, bookmaker, outcome_name"
+        return [OddsRow(*row) for row in self._conn.execute(sql, params)]
+
     def close(self) -> None:
         self._conn.close()
 
