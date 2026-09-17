@@ -13,8 +13,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # No moving v10 major tag is published; pin the full current version.
       - name: Install uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: "3.13"
           enable-cache: true
