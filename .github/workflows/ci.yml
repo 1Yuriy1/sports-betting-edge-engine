@@ -28,7 +28,7 @@ jobs:
       - name: Lint (ruff)
         run: |
           source .venv/bin/activate
-          ruff check scripts examples tests
+          ruff check scripts examples tests engine
 
       - name: Test (pytest)
         run: |
