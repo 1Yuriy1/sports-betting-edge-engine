@@ -18,7 +18,7 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -48,7 +48,7 @@ class Feature:
     default: float = 0.0
 
 
-REGISTRY: Tuple[Feature, ...] = (
+REGISTRY: tuple[Feature, ...] = (
     Feature("elo", 0.45, "team", "z", "Team strength (Elo)", "Good teams win. This is the only term carrying real weight."),
     Feature("point_diff", 0.12, "team", "z", "Season point differential", "Cheap proxy for true strength; correlated with Elo on purpose."),
     Feature("star_qb", 0.10, "team", "minmax", "Star quarterback", "Partly real, partly ‘the script favors stars.’"),
@@ -86,7 +86,7 @@ REGISTRY: Tuple[Feature, ...] = (
     Feature("divisional_game", 0.03, "chaos", "raw", "Divisional matchup", "Familiarity compresses talent gaps. Mildly real."),
 )
 
-BY_KEY: Dict[str, Feature] = {f.key: f for f in REGISTRY}
+BY_KEY: dict[str, Feature] = {f.key: f for f in REGISTRY}
 MIRROR_FEATURES = ("qb_new_relationship", "madden_cover", "si_cover")
 
 
@@ -94,11 +94,11 @@ MIRROR_FEATURES = ("qb_new_relationship", "madden_cover", "si_cover")
 class LeagueStats:
     """Normalization parameters fit on the full league table."""
 
-    minmax: Dict[str, Tuple[float, float]] = field(default_factory=dict)
-    zparams: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    minmax: dict[str, tuple[float, float]] = field(default_factory=dict)
+    zparams: dict[str, tuple[float, float]] = field(default_factory=dict)
 
     @classmethod
-    def fit(cls, df: pd.DataFrame) -> "LeagueStats":
+    def fit(cls, df: pd.DataFrame) -> LeagueStats:
         stats = cls()
         for feat in REGISTRY:
             if feat.kind != "team" or feat.key not in df.columns:
@@ -134,7 +134,7 @@ class Contribution:
     weight: float
     points: float
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
             "label": self.label,
@@ -153,7 +153,7 @@ def moneyline_to_implied(odds: float) -> float:
     return 100.0 / (odds + 100.0)
 
 
-def no_vig_pair(ml_a: float, ml_b: float) -> Tuple[float, float]:
+def no_vig_pair(ml_a: float, ml_b: float) -> tuple[float, float]:
     """Return no-vig implied probabilities for a two-sided moneyline market."""
     pa = moneyline_to_implied(ml_a)
     pb = moneyline_to_implied(ml_b)
@@ -190,7 +190,7 @@ class ConspiracyModel:
     def __init__(
         self,
         teams: pd.DataFrame,
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
         logit_scale: float = LOGIT_SCALE,
         use_mirrors: bool = False,
     ) -> None:
@@ -210,7 +210,7 @@ class ConspiracyModel:
         self.use_mirrors = use_mirrors
 
     @classmethod
-    def from_csv(cls, path: str | Path, **kwargs: Any) -> "ConspiracyModel":
+    def from_csv(cls, path: str | Path, **kwargs: Any) -> ConspiracyModel:
         return cls(pd.read_csv(path), **kwargs)
 
     def _team_value(self, team: str, key: str) -> float:
@@ -223,14 +223,14 @@ class ConspiracyModel:
     def score_side(
         self,
         team: str,
-        side_ctx: Dict[str, Any],
-        opponent: Optional[str] = None,
-    ) -> Tuple[float, List[Contribution]]:
+        side_ctx: dict[str, Any],
+        opponent: str | None = None,
+    ) -> tuple[float, list[Contribution]]:
         team = team.upper()
         if team not in self.teams.index:
             raise KeyError(f"unknown team '{team}'. known: {sorted(self.teams.index)}")
 
-        contribs: List[Contribution] = []
+        contribs: list[Contribution] = []
         total = 0.0
 
         for feat in REGISTRY:
@@ -266,8 +266,8 @@ class ConspiracyModel:
         contribs.sort(key=lambda c: abs(c.points), reverse=True)
         return total, contribs
 
-    def chaos_factor(self, shared: Dict[str, Any]) -> Tuple[float, List[Contribution]]:
-        contribs: List[Contribution] = []
+    def chaos_factor(self, shared: dict[str, Any]) -> tuple[float, list[Contribution]]:
+        contribs: list[Contribution] = []
         total = 0.0
         for feat in REGISTRY:
             if feat.kind != "chaos":
@@ -286,8 +286,8 @@ class ConspiracyModel:
         self,
         team_a: str,
         team_b: str,
-        game_context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        game_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         team_a, team_b = team_a.upper(), team_b.upper()
         ctx = game_context or {}
         ctx_a = dict(ctx.get("a", {}))
@@ -336,10 +336,10 @@ class ConspiracyModel:
         team_b: str,
         ml_a: float,
         ml_b: float,
-        game_context: Optional[Dict[str, Any]] = None,
-        spread: Optional[float] = None,
+        game_context: dict[str, Any] | None = None,
+        spread: float | None = None,
         week: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """V2: compare model probability to no-vig market probability.
 
         `spread` is absolute points attached to the market favorite when known.
@@ -360,7 +360,7 @@ class ConspiracyModel:
         home_team = team_b.upper() if dict(ctx.get("b", {})).get("home") else None
         is_road_favorite = is_favorite_pick and home_team is not None and pick != home_team
 
-        trap_flags: List[str] = []
+        trap_flags: list[str] = []
         if pick_odds <= EXPENSIVE_FAVORITE_CUTOFF:
             trap_flags.append("expensive_favorite")
         if is_road_favorite:
@@ -436,13 +436,13 @@ class ConspiracyModel:
         b: str,
         prob_a: float,
         prob_base: float,
-        cont_a: List[Contribution],
-        cont_b: List[Contribution],
-        chaos: List[Contribution],
-    ) -> List[str]:
+        cont_a: list[Contribution],
+        cont_b: list[Contribution],
+        chaos: list[Contribution],
+    ) -> list[str]:
         lines = [f"{a} {prob_a * 100:.1f}% — {b} {(1 - prob_a) * 100:.1f}%"]
 
-        def top_spooky(conts: List[Contribution], team: str) -> List[str]:
+        def top_spooky(conts: list[Contribution], team: str) -> list[str]:
             out = []
             for c in conts:
                 if c.key in ("elo", "point_diff", "home"):
@@ -464,7 +464,7 @@ class ConspiracyModel:
         )
         return lines
 
-    def slate(self, game_context: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    def slate(self, game_context: dict[str, Any] | None = None) -> pd.DataFrame:
         rows = []
         names = list(self.teams.index)
         for i, a in enumerate(names):
@@ -490,7 +490,7 @@ def brier(probs: np.ndarray, outcomes: np.ndarray) -> float:
     return float(np.mean((probs - outcomes) ** 2))
 
 
-def backtest(model: ConspiracyModel, results_csv: str | Path) -> Dict[str, Any]:
+def backtest(model: ConspiracyModel, results_csv: str | Path) -> dict[str, Any]:
     games = pd.read_csv(results_csv)
     required = {"team_a", "team_b", "a_won"}
     missing = required - set(games.columns)
@@ -498,10 +498,10 @@ def backtest(model: ConspiracyModel, results_csv: str | Path) -> Dict[str, Any]:
         raise ValueError(f"results file missing columns: {sorted(missing)}")
 
     model_p, base_p, outcomes = [], [], []
-    v2_rows: List[Dict[str, Any]] = []
+    v2_rows: list[dict[str, Any]] = []
     has_market = {"ml_a", "ml_b"}.issubset(games.columns)
     for _, g in games.iterrows():
-        ctx: Dict[str, Any] = {"a": {}, "b": {}, "shared": {}}
+        ctx: dict[str, Any] = {"a": {}, "b": {}, "shared": {}}
         for col in games.columns:
             if col.startswith("ctx_a_"):
                 ctx["a"][col[6:]] = g[col]
@@ -539,8 +539,8 @@ def backtest(model: ConspiracyModel, results_csv: str | Path) -> Dict[str, Any]:
             })
 
     mp, bp, y = np.array(model_p), np.array(base_p), np.array(outcomes)
-    report: Dict[str, Any] = {
-        "n_games": int(len(y)),
+    report: dict[str, Any] = {
+        "n_games": len(y),
         "conspiracy_model": {"log_loss": round(log_loss(mp, y), 4), "brier": round(brier(mp, y), 4)},
         "elo_baseline": {"log_loss": round(log_loss(bp, y), 4), "brier": round(brier(bp, y), 4)},
         "coin_flip": {"log_loss": round(log_loss(np.full_like(y, 0.5), y), 4), "brier": 0.25},
@@ -598,7 +598,7 @@ MIA,KC,0,0.28,142,-170,3.0,1,0,1,1,0
 """
 
 
-def write_samples(dest: Path) -> List[Path]:
+def write_samples(dest: Path) -> list[Path]:
     files = []
     for name, content in (
         ("teams.csv", SAMPLE_TEAMS),
@@ -620,7 +620,7 @@ def print_features() -> None:
         print(f"{'':<26}{'':>8}  {'':<13}{feat.rationale}")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Parody conspiracy win-probability model.")
     ap.add_argument("--teams", help="path to teams CSV")
     ap.add_argument("--matchup", nargs=2, metavar=("TEAM_A", "TEAM_B"))

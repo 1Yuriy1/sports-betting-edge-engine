@@ -1,5 +1,7 @@
 # Sports Betting / Conspiracy Model Code
 
+[![CI](https://github.com/1Yuriy1/sports-betting-edge-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/1Yuriy1/sports-betting-edge-engine/actions/workflows/ci.yml)
+
 This folder contains the standalone **Hermes Conspiracy Model V2** code we built for NFL moneyline slate analysis.
 
 > **Entertainment only. This is not betting advice. Superstition/conspiracy terms are unvalidated. Do not bet blindly from this model.**
@@ -21,6 +23,19 @@ The script uses Python with `pandas` and `numpy`. On this Mac, use `uv` so nothi
 
 ```bash
 uv run --with pandas --with numpy scripts/hermes_conspiracy_model.py --help
+```
+
+## Development
+
+CI (`.github/workflows/ci.yml`) lints and tests on Python 3.13 with [uv](https://docs.astral.sh/uv/). To run the same checks locally:
+
+```bash
+uv venv
+uv pip install -r requirements-dev.txt
+source .venv/bin/activate
+
+ruff check scripts examples tests
+pytest -q
 ```
 
 ## Quick test
