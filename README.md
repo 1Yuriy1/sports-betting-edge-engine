@@ -9,7 +9,12 @@ This folder contains the standalone **Hermes Conspiracy Model V2** code we built
 ## Contents
 
 ```text
-scripts/hermes_conspiracy_model.py          # Main model + CLI
+engine/odds.py                             # The Odds API client (h2h, retries, credit tracking)
+engine/store.py                            # Append-only SQLite snapshot store (schema v1)
+scripts/hermes_conspiracy_model.py         # Main model + CLI
+scripts/snapshot_odds.py                   # Odds snapshot CLI (data spine)
+.github/workflows/ci.yml                   # Lint + test pipeline
+.github/workflows/snapshot.yml             # Scheduled odds snapshots
 references/v2-market-edge-filter.md        # V2 market-edge workflow
 references/conspiracy-model-skill.md       # Hermes skill documentation
 examples/week2_fox_odds.csv                # Week 2 odds example slate
