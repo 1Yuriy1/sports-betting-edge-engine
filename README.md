@@ -11,8 +11,10 @@ This folder contains the standalone **Hermes Conspiracy Model V2** code we built
 ```text
 engine/odds.py                             # The Odds API client (h2h, retries, credit tracking)
 engine/store.py                            # Append-only SQLite snapshot store (schema v1)
+engine/ledger.py                           # Bet ledger: log, grade, CLV report
 scripts/hermes_conspiracy_model.py         # Main model + CLI
 scripts/snapshot_odds.py                   # Odds snapshot CLI (data spine)
+scripts/bet_log.py                         # Bet-log CLI (log/grade/report)
 .github/workflows/ci.yml                   # Lint + test pipeline
 .github/workflows/snapshot.yml             # Scheduled odds snapshots
 references/v2-market-edge-filter.md        # V2 market-edge workflow
@@ -88,6 +90,37 @@ Look for:
   "trap_flags": ["public_chalk_tax"]
 }
 ```
+
+## Bet log, grading, and CLV
+
+Bets live in the same SQLite file as the odds snapshots (`bets` table, schema
+v1: `placed_at`, `game_id`, `market`, `pick`, `odds`, `stake`,
+`sportsbook`, `closing_odds`, `status`, `profit`, `settled_at`). Log a bet
+when you take it, log the closing price when the market closes, and grade
+manually once the game is final — that is the v1 workflow.
+
+```bash
+uv run python scripts/bet_log.py log --game-id nfl-w2-det-buf --pick DET \
+    --odds -150 --stake 100 --sportsbook pinnacle --closing-odds -160
+uv run python scripts/bet_log.py grade --game-id nfl-w2-det-buf --outcome won
+uv run python scripts/bet_log.py report --db ./odds.sqlite
+```
+
+Grading outcomes are `won`, `lost`, and `pushed`; profit follows the frozen
+model's `bet_profit` semantics (won at +150 pays `stake * 1.5`, won at -150
+pays `stake * 100 / 150`, a loss costs the stake, a push returns nothing).
+
+The report prints per-bet and mean closing line value in percent:
+
+```text
+clv_pct = (decimal_odds_taken / decimal_odds_close - 1) * 100
+```
+
+Positive means you beat the close — the market moved toward your pick after
+you bet. CLV is the honest early signal: it shows an edge in tens of bets,
+long before profit proves anything. Pending bets are excluded from the mean
+and reported by count (`bets_ungraded`), and graded bets without logged
+closing odds are counted as `bets_missing_closing_odds`.
 
 ## Core idea
 
