@@ -1,16 +1,32 @@
-# Sports Betting / Conspiracy Model Code
+# The Discipline Engine
 
 [![CI](https://github.com/1Yuriy1/sports-betting-edge-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/1Yuriy1/sports-betting-edge-engine/actions/workflows/ci.yml)
 
-This folder contains the standalone **Hermes Conspiracy Model V2** code we built for NFL moneyline slate analysis.
+**Auditable sports-betting discipline — deterministic staking, closing-line feedback, human-in-the-loop. Not picks, not guarantees, not a betting bot.**
 
-> **Entertainment only. This is not betting advice. Superstition/conspiracy terms are unvalidated. Do not bet blindly from this model.**
+Betting apps have largely solved the *what to bet* problem: research, stats, market exploration, bet-building, all in the app. Almost nothing solves the *how* problem — bankroll discipline, stake sizing, journaling, and honest feedback about whether you are actually beating the closing line. This repo is a working prototype of that missing layer, built to the standard a regulated operator would require.
+
+> **The model never computes a number.** Every probability, edge, stake, and grade comes from deterministic, test-covered Python. A conversational agent sits on top to route, explain, and narrate — it has no tool that produces a figure of its own, and no authority over stakes. A human places every bet.
+
+## The concept
+
+Betting products compete on *what* to bet. The unsolved problem — and the one responsible-gaming programs and regulators actually care about — is *how*:
+
+- **Stake sizing a customer can audit, line by line.** Quarter Kelly by default, hard-capped at 5% of bankroll, zero stake whenever the edge is non-positive. Discipline lives in the math, not a settings toggle.
+- **Honest feedback.** The ledger grades every bet against the closing price, so you learn whether you beat the market — the standard serious bettors already trust. CLV shows signal in a few hundred logged bets; proving ROI from raw profit needs thousands of graded games.
+- **A narrating agent, not a betting agent.** The conversational layer (an Anthropic tool runner) wraps eleven deterministic tools and re-applies mandatory disclaimers to every output. It can research, explain, and summarize. It cannot size a stake or place a bet.
+- **Operator-shaped.** The architecture is built so a sportsbook's own assistant could adopt the layer wholesale — discipline guidance rather than suggested wagers, which is the category regulators are drawing lines around.
+
+The repo began as the **Hermes Conspiracy Model**, a parody win-probability engine for NFL slates. Its narrative layer survives as a clearly labelled `narrative` field on edge rows and as the agent's voice — display only, never an input to staking.
 
 ## Contents
 
 ```text
 engine/odds.py                             # The Odds API client (h2h, retries, credit tracking)
 engine/store.py                            # Append-only SQLite snapshot store (schema v1)
+engine/pricing.py                          # Moneyline-to-implied and no-vig pair helpers
+engine/anchor.py                           # Sharp-book anchoring, edges, line movement
+engine/kelly.py                            # Fractional Kelly staking
 engine/ledger.py                           # Bet ledger: log, grade, CLV report
 engine/agent.py                            # Hermes agent: tool runner over the engine
 scripts/hermes_conspiracy_model.py         # Main model + CLI
@@ -29,7 +45,7 @@ examples/run_slate.py                      # Helper to run the model across a sl
 
 ## Requirements
 
-The script uses Python with `pandas` and `numpy`. On this Mac, use `uv` so nothing has to be globally installed:
+Everything runs through [uv](https://docs.astral.sh/uv/) so nothing has to be installed globally. All commands below run from the repository root:
 
 ```bash
 uv run --with pandas --with numpy scripts/hermes_conspiracy_model.py --help
@@ -51,14 +67,12 @@ pytest -q
 ## Quick test
 
 ```bash
-cd /Users/yuriy/sports_betting_code
 uv run --with pandas --with numpy scripts/hermes_conspiracy_model.py --write-samples examples/generated
 ```
 
 ## Run the example Week 2 slate
 
 ```bash
-cd /Users/yuriy/sports_betting_code
 uv run --with pandas --with numpy examples/run_slate.py \
   --teams examples/sample_teams.csv \
   --slate examples/week2_fox_odds.csv
@@ -67,7 +81,6 @@ uv run --with pandas --with numpy examples/run_slate.py \
 ## Single matchup with V2 odds filter
 
 ```bash
-cd /Users/yuriy/sports_betting_code
 uv run --with pandas --with numpy scripts/hermes_conspiracy_model.py \
   --teams examples/sample_teams.csv \
   --matchup DET BUF \
@@ -231,29 +244,29 @@ it. Slate reports at `medium` effort; one-spot reasoning runs at `high`.
 
 ## Core idea
 
-V2 is not meant to pick every game. It is meant to find:
+The product path does not predict. It anchors:
 
 ```text
-model probability - no-vig market probability = edge
+sharp-book no-vig probability - implied probability of the best soft price = edge
 ```
 
-Then classify:
+Then sizes the edge by fractional Kelly (capped, zero on a non-positive edge), logs the bet, and grades it against the close. The legacy conspiracy path keeps its original identity — `model probability - no-vig market probability = edge` — and its classifier (`PASS_NO_EDGE`, `PASS_EXPENSIVE_FAVORITE`, `SMALL_LEAN`, `LEAN`, `PLAY`, `DOG_VALUE_PLAY`), frozen as entertainment.
 
-```text
-PASS_NO_EDGE
-PASS_EXPENSIVE_FAVORITE
-SMALL_LEAN
-LEAN
-PLAY
-DOG_VALUE_PLAY
-```
+## What this is not
+
+- **Not affiliated.** A personal prototype — not affiliated with, endorsed by, or reviewed by any sportsbook or operator.
+- **Not a betting bot.** It cannot place bets and does not connect to any sportsbook account. Execution is always manual.
+- **Not a pick seller.** No guarantees and no claim of a proven edge. The only success metric this repo tracks is CLV against the closing line, and validating that takes hundreds of logged bets.
+- **Not betting advice.** 21+ only.
 
 ## Guardrail
 
 Separate:
 
 - **Facts:** odds, scores, spreads, injuries, weather, official data
-- **Assumptions:** hand-built team ratings and weights
+- **Assumptions:** sharp-book prices, hand-tuned narrative weights
 - **Parody:** conspiracy / superstition features
 
-Do not treat this as a proven edge without a large held-out backtest.
+## Responsible gambling
+
+Betting should be entertainment, not income. The staking caps are a ceiling, not a target. If gambling stops being fun, call **1-800-GAMBLER** (US) or your local helpline.
